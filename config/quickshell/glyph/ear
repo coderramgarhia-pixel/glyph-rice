@@ -3,6 +3,11 @@
 #   ear MAC          → {"mode": 4, "l": 100, "r": 95, "case": 80}  (case — только когда наушники в кейсе;
 #                       у полноразмерных и шейных одно "bat"; без шумодава — Ear (open) — нет "mode")
 #   ear MAC mode N   → поставить режим, ответ тот же
+#   ear MAC all      → ещё eq, bass, spatial, inear, latency, dual  // local change: buds app (buds/Ears.qml)
+#   ear MAC set K V  → поставить K (mode, eq, bass, spatial, inear, latency, dual, ring) и ответить как all
+#   ear MAC set ceq B.M.T → свой эквалайзер (пресет eq 6): бас, середина, верх в дБ, −6…6; в all — "ceq": [B, M, T]
+#   ear MAC set gesture D.B.T.A → жест: часть (2 левый, 3 правый, 4 кейс), кнопка, тип, действие; в all — "gest": [[D, B, T, A], …]
+#   ear MAC fit      → тест посадки, ждёт ответа до 25 с: ещё "fit": [левый, правый], 0 good, 1 bad, 2 error
 # режимы: 1 high, 2 mid, 3 low, 4 adaptive, 5 off, 7 transparency
 import json, re, socket, struct, sys, uuid
 
@@ -32,11 +37,12 @@ def crc(b):  # CRC-16/MODBUS
 
 
 # кадр: 55, control, команда, длина, номер, данные, crc. Ответ приходит с командой без бита 0x8000
-def ask(s, reqs):
+def ask(s, reqs, extra=()):
     for cmd, p in reqs:
         m = struct.pack("<BHHHB", 0x55, 0x120, cmd, len(p), 0) + p
         s.send(m + struct.pack("<H", crc(m)))
-    want = {cmd & 0x7FFF for cmd, _ in reqs}
+    # ждём только ответы на запросы C0xx (и extra): подтверждения F0xx шлют не все модели — ждать их значило бы 4 с таймаута
+    want = {cmd & 0x7FFF for cmd, _ in reqs if cmd >> 12 == 0xC} | set(extra)
     got, buf = {}, b""
     while want - got.keys():
         try:
@@ -58,12 +64,73 @@ def ask(s, reqs):
     return got
 
 
+# local change: свой эквалайзер — кадр как в BudsLink (setCustomEq): 3 полосы по 13 байт (тип, усиление, частота, Q — float LE),
+# порядок середина 980 Гц, верх 3.5 кГц, бас 140 Гц; в байтах 1–4 — минус наибольшее |усиление| (запас), при нуле −0.0
+CEQ = bytes.fromhex("0300000000" "01" "00000000" "00007544" "c3f5283f" "02" "00000000" "00c05a45" "0000803f"
+                    "00" "00000000" "00000c43" "cdcc4c3f" "000000000000000000")
+
+
+def ceq(b, m, t):
+    p = bytearray(CEQ)
+    p[1:5] = struct.pack("<f", -float(max(abs(b), abs(m), abs(t))))
+    for i, v in enumerate((m, t, b)):
+        p[6 + 13 * i : 10 + 13 * i] = struct.pack("<f", v)
+    return p
+
+
+def db(p, o):  # усиление полосы → целые дБ в −6…6; мусор (NaN) — 0
+    v = struct.unpack_from("<f", p, o)[0]
+    return round(max(-6.0, min(6.0, v))) if v == v else 0
+
+
+# local change: настройки для buds/Ears.qml. Команды — как в BudsLink (nothingBudsConfig.js); EQ ставит 0xF010, не 0xF01D
+SETS = {
+    "mode": lambda v: [(0xF00F, [1, v, 0])],
+    "eq": lambda v: [(0xF010, [v, 0])],
+    "bass": lambda v: [(0xF051, [int(v > 0), max(v, 1) * 2])],  # 0 — выкл; уровень 1–5 уходит удвоенным, 0 он не принимает
+    "spatial": lambda v: [(0xF052, [v])],
+    "inear": lambda v: [(0xF004, [1, 1, v])],
+    "latency": lambda v: [(0xF040, [1 if v else 2, 0])],
+    "dual": lambda v: [(0xF01A, [v])],
+    "ring": lambda v: [(0xF002, [2, v]), (0xF002, [3, v])],  # оба наушника
+    "gesture": lambda d, b, t, a: [(0xF003, [1, d, b, t, a])],
+    "ceq": lambda b, m, t: [(0xF041, ceq(b, m, t))],
+}
+# ответ → (ключ, мин. длина, значение)
+EXTRA = {
+    0x401F: ("eq", 1, lambda p: p[0]),
+    0x404E: ("bass", 2, lambda p: p[1] // 2 if p[0] == 1 else 0),
+    0x404F: ("spatial", 1, lambda p: int(p[0] == 1)),
+    0x400E: ("inear", 3, lambda p: int(p[2] == 1)),
+    0x4041: ("latency", 1, lambda p: int(p[0] == 1)),
+    0x4027: ("dual", 1, lambda p: int(p[0] == 1)),
+    # жесты: число, дальше по 4 байта (часть, кнопка, тип, действие); обрезанный хвост отбросить
+    0x4044: ("ceq", 36, lambda p: [db(p, 32), db(p, 6), db(p, 19)]),  # ответ — тот же кадр: бас, середина, верх
+    0x4018: ("gest", 1, lambda p: [list(p[1 + 4 * i : 5 + 4 * i]) for i in range(p[0]) if len(p) >= 5 + 4 * i]),
+}
+FIT = 0xE00D & 0x7FFF
+
 mac, *rest = sys.argv[1:]
-reqs = [(0xF00F, bytes([1, int(rest[1]), 0]))] if rest[:1] == ["mode"] else []
-with socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM) as s:
-    s.settimeout(4)
-    s.connect((mac, channel(mac)))
-    got = ask(s, reqs + [(0xC007, b""), (0xC01E, b"")])
+if rest[:1] == ["mode"]:
+    rest = ["set", *rest]
+reqs, extra, wait = [], (), 4
+if rest[:1] == ["set"]:
+    if rest[1] not in SETS:
+        sys.exit("unknown setting")
+    reqs = [(c, bytes(p)) for c, p in SETS[rest[1]](*(int(x) for x in rest[2].split(".")))]
+elif rest[:1] == ["fit"]:
+    reqs, extra, wait = [(0xF014, b"\x01")], (FIT,), 25
+if rest[:1] in (["all"], ["set"], ["fit"]):
+    reqs += [(c | 0x8000, b"") for c in EXTRA]  # запрос — тот же номер с битом 0x8000
+# local change: у наушников один канал управления — второй ear (вторая копия шелла, ручной запуск, перезагрузка конфига)
+# ловил Errno 16 или таймаут и шелл застревал на «connecting». Теперь ждём своей очереди на общем замке
+import fcntl, os
+with open(os.path.join(os.environ.get("XDG_RUNTIME_DIR", "/tmp"), "glyph-ear.lock"), "w") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)  # отпускается, когда файл закрыт: конец блока или выход процесса
+    with socket.socket(socket.AF_BLUETOOTH, socket.SOCK_STREAM, socket.BTPROTO_RFCOMM) as s:
+        s.settimeout(wait)
+        s.connect((mac, channel(mac)))
+        got = ask(s, reqs + [(0xC007, b""), (0xC01E, b"")], extra)
 
 # заряд: число батарей, дальше пары (2 левый, 3 правый, 4 кейс, 6 одна на всё; уровень & 7f). Режим: 01 MM 00 …
 if 0x4007 not in got:
@@ -75,5 +142,13 @@ if len(got.get(0x401E, b"")) > 1:
     out["mode"] = got[0x401E][1]
 for i in range(bat[0]):
     k, v = bat[1 + 2 * i], bat[2 + 2 * i]
-    out[{2: "l", 3: "r", 4: "case", 6: "bat"}.get(k, str(k))] = v & 0x7F
+    name = {2: "l", 3: "r", 4: "case", 6: "bat"}.get(k, str(k))
+    out[name] = v & 0x7F
+    if v & 0x80:  # local change: старший бит — заряжается; "chg": ["case", …]
+        out.setdefault("chg", []).append(name)
+for c, (k, n, f) in EXTRA.items():
+    if len(got.get(c, b"")) >= n:
+        out[k] = f(got[c])
+if len(got.get(FIT, b"")) >= 2:
+    out["fit"] = list(got[FIT][:2])
 print(json.dumps(out))

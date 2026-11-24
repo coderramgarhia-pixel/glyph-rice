@@ -53,6 +53,10 @@ PanelWindow {
 
     Stage {
         id: stage
+        // local change: gone while this screen has apps, so a 3-finger swipe past the first/last app shows black, not home
+        opacity: root.home ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: Theme.t } }
         // раскладка под бар слева; бар сверху или снят с экрана — на его полширины влево, по центру
         x: Theme.state.barAt === "top" || !Theme.scr(root.screen?.name, "bar") ? -39 * Theme.s : 0
 
@@ -237,7 +241,12 @@ PanelWindow {
             id: budsW
             W {
                 round: true
-                Notch { onNotch: d => Sys.setVol(Sys.vol + d * 0.05) } // колесо — громкость, и при наушниках: их заряд колесом не крутят
+                Notch {
+                    onNotch: d => Sys.setVol(Sys.vol + d * 0.05) // колесо — громкость, и при наушниках: их заряд колесом не крутят
+                    acceptedButtons: Qt.LeftButton // local change: click opens the buds app, same path as the launcher entry
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: Quickshell.execDetached(["hyprctl", "dispatch", "hl.dsp.global([[shell:buds]])"])
+                }
                 Ring { anchors { fill: parent; margins: 12 } f: root.buds ? root.buds.battery : Sys.vol }
                 Column {
                     anchors.centerIn: parent

@@ -11,12 +11,14 @@ import "clip"
 import "deck"
 import "glyph"
 import "home"
+import "pages" // local change
 import "launcher"
 import "power"
 import "prefs"
 import "quick"
 import "settings"
 import "shot"
+import "spot"
 import "vpn"
 import "wall"
 
@@ -27,6 +29,7 @@ ShellRoot {
     id: shell
 
     Launcher { id: launcher }
+    Spot { id: spot; launcher: launcher } // local change: Spotlight, Ctrl+Space (bind in hypr/user.lua)
     Quick {
         id: quick
         onPowerRequested: power.open()
@@ -36,7 +39,8 @@ ShellRoot {
     Power { id: power }
     Prefs { id: prefs; onWallRequested: walls.open() }
     Glyph {}
-    Buds {}
+    // Buds {}  // local change: no popup card when headphones connect
+    Ears { id: ears } // local change: buds app (Nothing X style controls), launcher entry "Buds"
     Cal { id: cal }
     Clip { id: clip }
     Charms { id: charms }
@@ -55,6 +59,7 @@ ShellRoot {
             // screen — петля (окно пересоздаётся, screen меняется)
             Home { screen: s.modelData; visible: Theme.scr(s.modelData.name, "home") }
             Hot { screen: s.modelData; onTriggered: quick.peek() }
+            Pages { screen: s.modelData } // local change: where you are — apps ←/→, workspace ↑/↓
             Bar {
                 screen: s.modelData
                 visible: Theme.scr(s.modelData.name, "bar")
@@ -149,6 +154,8 @@ ShellRoot {
     Shortcut { name: "charms"; description: "emoji, kaomoji, symbols"; onPressed: charms.toggle() }
     Shortcut { name: "wall"; description: "wallpapers"; onPressed: walls.toggle() }
     Shortcut { name: "game"; description: "game mode"; onPressed: Rules.store.game = !Rules.store.game }
+    Shortcut { name: "spot"; description: "spotlight search"; onPressed: spot.toggle() } // local change
+    Shortcut { name: "buds"; description: "buds app"; onPressed: ears.open() } // local change: закрывается только esc
 
     component Shortcut: GlobalShortcut { appid: "shell" }
 }

@@ -4,6 +4,11 @@
 
 Black, white dots, one red. A sibling of [Demon's Shot](https://github.com/Nebelung-cloud/demons-shot-rice).
 
+> **Modified version.** A fork of [Nebelung-cloud/glyph-rice](https://github.com/Nebelung-cloud/glyph-rice) v0.4.0 (GPL-3.0),
+> changed in November 2026: a buds app for Nothing / CMF earbuds (noise, EQ with custom bands, controls, fit test),
+> Spotlight search, a scrolling layout with one app per screen and swipe navigation, and an auto-hiding bar.
+> Changed lines are marked `// local change`.
+
 <br>
 
 ![Glyph desktop](screenshots/desktop.png)

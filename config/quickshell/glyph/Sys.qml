@@ -96,10 +96,24 @@ Singleton {
     readonly property var buds: Bluetooth.devices.values.find(d => d.connected && /^(nothing|cmf|ear)\b|^(buds|neckband) pro$/i.test(d.deviceName || d.name)) ?? null
     property var ear: null // {mode?, l, r, case?} или {mode?, bat} у полноразмерных и шейных
     readonly property var earBat: ["bat", "l", "r", "case"].filter(k => ear?.[k] !== undefined)
-    onBudsChanged: { ear = null; earNext = null; }
+    onBudsChanged: { ear = null; earQ = []; earBusy = 0; earFails = 0; }
     // сразу после подключения канал ещё не готов — спрашивать раз в 2 с, пока не ответят. ponytail: не Nothing с похожим
     // именем так и будет опрашиваться, пока подключено
-    Timer { interval: 2000; repeat: true; running: !!root.buds && !root.ear; onTriggered: root.earRun([]) }
+    Timer { interval: 2000; repeat: true; running: !!root.buds && !root.ear; onTriggered: root.earRun(["all"]) } // local change: all — у buds/Ears.qml не пропадут настройки
+    // local change: наушники сами переподключились (перезагрузка после настройки) — ядро держит их канал управления занятым
+    // (Errno 16), пока связь не порвёт ноутбук. Три таких ответа подряд — переподключить с ноутбука, не чаще раза в 5 минут.
+    // Если запущен BudsLink, канал занят им — не трогать
+    property int earBusy: 0
+    property var earCase: null // local change: последний известный заряд кейса — buds/Ears.qml показывает его с пометкой «last»
+    property int earFails: 0 // local change: ошибок подряд — buds/Ears.qml после трёх объясняет, что делать
+    property real earFixAt: 0
+    Process { id: earFix }
+    function earUnstick() {
+        if (++earBusy < 3 || Date.now() - earFixAt < 300000 || !buds) return;
+        earBusy = 0;
+        earFixAt = Date.now();
+        earFix.exec(["sh", "-c", 'pgrep -f maniacx.BudsLink >/dev/null || { bluetoothctl disconnect "$0"; sleep 2; bluetoothctl --timeout 15 connect "$0"; }', buds.address]);
+    }
     // режимы по модели — как в BudsLink (deviceConfigs). Кого нет в списке — полный набор: у остальных Ear, CMF, Headphone он такой
     readonly property var ancModes: {
         const n = buds?.deviceName || buds?.name || "";
@@ -110,25 +124,48 @@ Singleton {
         if (/buds pro$/i.test(n)) return [[5, "off"], [7, "transp"], [3, "low"], [2, "mid"], [1, "high"]];
         return [[5, "off"], [7, "transp"], [3, "low"], [2, "mid"], [1, "high"], [4, "auto"]];
     }
-    property var earNext: null
+    // local change: очередь, а не одна следующая команда — в buds/Ears.qml несколько настроек подряд не должны теряться
+    property var earQ: []
+    property bool earRunning: false // local change: buds/Ears.qml показывает «saving…»; ставит earP (привязка к earP.running на старте давала undefined)
     function earRun(a) {
         if (!buds) return;
-        const c = [Quickshell.shellPath("ear"), buds.address, ...a];
-        if (earP.running) earNext = c;
-        else { earP.command = c; earP.running = true; }
+        const c = [Quickshell.shellPath("ear"), buds.address, ...a.map(String)];
+        if (!earP.running) { earP.command = c; earP.running = true; }
+        else if (!earQ.some(q => q.join() === c.join())) earQ = [...earQ, c];
     }
-    function setAnc(m) { ear = Object.assign({}, ear, { mode: m }); earRun(["mode", m]); }
+    function setAnc(m) { earSet("mode", m); }
+    function earSet(k, v) { ear = Object.assign({}, ear, { [k]: v }); earRun(["set", k, v]); }
     Process {
         id: earP
+        onRunningChanged: root.earRunning = running
         stdout: StdioCollector {
             onStreamFinished: {
                 if (earP.command[1] !== root.buds?.address) return;
-                try { root.ear = JSON.parse(text); } catch (e) { root.ear = null; }
+                // заряд — из свежего ответа (кейс пропадает, когда наушники вынули); настройки из all/set остаются
+                try {
+                    // без Object.fromEntries: движок JS у Quickshell его не знает (TypeError — и ear вечно null)
+                    const n = JSON.parse(text);
+                    for (const k in root.ear ?? {})
+                        if (!(k in n) && !["l", "r", "case", "bat", "chg"].includes(k)) n[k] = root.ear[k];
+                    if (n.case !== undefined) root.earCase = n.case; // local change: кейс сообщают, только пока наушники в нём
+                    root.ear = n;
+                    root.earBusy = 0;
+                    root.earFails = 0;
+                } catch (e) { console.warn("ear: bad reply:", e); root.ear = null; }
+            }
+        }
+        stderr: StdioCollector {
+            onStreamFinished: {
+                if (text.trim()) { // local change: последняя строка ошибки — в лог шелла
+                    console.warn("ear:", text.trim().split("\n").pop());
+                    root.earFails++;
+                }
+                if (text.includes("Errno 16")) root.earUnstick();
             }
         }
         onExited: {
-            const next = root.earNext;
-            root.earNext = null;
+            const next = root.earQ[0];
+            root.earQ = root.earQ.slice(1);
             if (next && next[1] === root.buds?.address) exec(next);
         }
     }

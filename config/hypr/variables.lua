@@ -32,6 +32,9 @@ return {
         music         = "spotify-launcher",
         communication = "Telegram",
     },
+    -- local change: apps that draw their own top bar (tabs, menus, − □ ✕): no hyprbars bar (user.lua), their maximize allowed (rules.lua).
+    -- shortcut: matched by window class; a new self-drawing app gets a double bar until it's added here
+    ownBarApps                 = "google-chrome|zen|firefox|org\\.mozilla\\.firefox|[Cc]ode|[Aa]ntigravity.*|org\\.gnome\\..*|com\\.mitchellh\\.ghostty|Scrcpy-(iphone|pixel)|md\\.obsidian\\.Obsidian|org\\.freedesktop\\.MalcontentControl|com\\.usebottles\\.bottles|com\\.stremio\\.Stremio|io\\.github\\.maniacx\\.BudsLink|dev\\.herder\\.app|herder|neodlp|NeoDLP",
 
     -- Touchpad
     touchpadDisableTyping      = false,

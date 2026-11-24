@@ -30,6 +30,24 @@ PanelWindow {
     color: "transparent"
     WlrLayershell.namespace: "glyph-bar"
 
+    // local change: auto-hide. Windows on this screen's workspace (same test as home/Back.qml) → the bar slides off
+    // and stops reserving space; a 2px strip at its edge brings it back after a 150 ms dwell, like Quick (quick/Hot.qml)
+    readonly property bool busy: (Hyprland.monitorFor(screen)?.activeWorkspace?.toplevels.values.length ?? 0) > 0
+    property bool keep: false
+    readonly property bool shown: !busy || keep
+    readonly property bool hot: barHov.hovered || powOpen
+    onHotChanged: hot ? keepOn.restart() : keepOff.restart()
+    Timer { id: keepOn; interval: 150; onTriggered: if (root.hot) root.keep = true }
+    Timer { id: keepOff; interval: 400; onTriggered: if (!root.hot) root.keep = false }
+    // never reserve space: Hyprland's reserved area is per monitor, so reserving it on an empty workspace re-laid out the
+    // other workspaces, and the scrolling layout kept a stale 52 px view offset there (app shifted, previous one peeking at the left)
+    exclusionMode: ExclusionMode.Ignore
+    mask: shown ? null : edgeRegion // hidden: only the edge strip takes the pointer, clicks pass through elsewhere
+    Region { id: edgeRegion; item: edge }
+    Item { id: edge; width: root.vert ? 2 : parent.width; height: root.vert ? parent.height : 2 }
+    property real slide: shown ? 1 : 0
+    Behavior on slide { NumberAnimation { duration: Theme.t; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.glide } }
+
     readonly property int active: Hyprland.focusedWorkspace?.id ?? 0
     // шесть точек, больше — если занят или открыт дальний
     readonly property int count: Math.min(10, Math.max(6, active, ...Hyprland.workspaces.values.filter(w => w.toplevels.values.length).map(w => w.id)))
@@ -43,6 +61,7 @@ PanelWindow {
     SystemClock { id: clock; precision: SystemClock.Minutes }
 
     Stage {
+        HoverHandler { id: barHov } // anywhere over the bar window, children included
         Rectangle {
             id: pill
             x: 14 // от краёв экрана
@@ -52,6 +71,12 @@ PanelWindow {
             radius: Theme.corner(32)
             color: Theme.s1
             border { width: 1; color: Theme.s2 }
+            // same motion as Quick (quick/Quick.qml): fade with a 24px drift toward the edge
+            opacity: root.slide
+            transform: Translate {
+                x: root.vert ? -24 * (1 - root.slide) : 0
+                y: root.vert ? 0 : -24 * (1 - root.slide)
+            }
 
             Notch { onNotch: d => root.go(d > 0 ? "-1" : "+1") }
 

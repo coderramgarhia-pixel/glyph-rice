@@ -5,3 +5,8 @@ config/quickshell/glyph/buds/*.png
 config/fonts/.uuid
 # Claude Code: свои настройки и скиллы. git add . их не подхватит
 .claude/
+# Nothing's own fonts (Ndot, NType, Lettera) are not redistributable: never commit them
+config/fonts/[Nn]dot*
+config/fonts/[Nn][Tt]ype*
+config/fonts/lettera*
+__pycache__/

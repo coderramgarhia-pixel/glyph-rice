@@ -33,7 +33,7 @@ PanelWindow {
         interval: 300
         running: true
         onTriggered: root.apps = DesktopEntries.applications.values.filter(e => !e.noDisplay).map(e => ({
-            id: e.id, name: e.name, src: root.icon(e.icon),
+            id: e.id, name: e.name, src: root.icon(e.icon), gen: e.genericName, // local change: gen — Spot's second line
             extra: `${e.id} ${e.genericName} ${(e.keywords ?? []).join(" ")}`.toLowerCase(), run: () => e.execute()
         })).sort((a, b) => a.name.localeCompare(b.name))
     }
@@ -126,11 +126,13 @@ PanelWindow {
         if (!it) return;
         if (it.keep) return it.run();
         close();
-        if (it.id) {
-            uses = Object.assign({}, uses, { [it.id]: (uses[it.id] ?? 0) + 1 });
-            usesFile.setText(JSON.stringify(uses));
-        }
+        if (it.id) used(it.id);
         it.run();
+    }
+    // local change: out of launch() so Spot (spot/Spot.qml) counts its launches into the same "recent"
+    function used(id) {
+        uses = Object.assign({}, uses, { [id]: (uses[id] ?? 0) + 1 });
+        usesFile.setText(JSON.stringify(uses));
     }
 
     FileView {

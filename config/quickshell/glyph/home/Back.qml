@@ -24,6 +24,10 @@ PanelWindow {
 
     Stage {
         id: stage
+        // local change: wallpaper only on an empty screen; behind apps it's plain bg, so a swipe past the edge shows black
+        opacity: root.home ? 1 : 0
+        visible: opacity > 0
+        Behavior on opacity { NumberAnimation { duration: Theme.t } }
         Image {
             visible: Theme.state.grid && !wall.opaque
             anchors.fill: parent

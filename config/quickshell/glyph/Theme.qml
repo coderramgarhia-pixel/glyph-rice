@@ -233,6 +233,7 @@ Singleton {
 
     // kitty подключает этот файл после своих цветов (include в kitty.conf); demonshot пишет туда же свою палитру
     FileView { id: kitty; path: Quickshell.env("HOME") + "/.config/demonshot/kitty.conf"; printErrors: false }
+    FileView { id: ghostty; path: Quickshell.env("HOME") + "/.config/demonshot/ghostty.conf"; printErrors: false } // local change
     // 16 ANSI из концепта: пастель только терминалу. Светлая тема их переставляет (make)
     readonly property var ansi: ["#0E0E0E", "#D71921", "#9BB59A", "#D9C38A", "#8EA3C2", "#B79BC2", "#8FB8B8", "#C9C9C9",
                                  "#4A4A4A", "#F0434B", "#B5CCB4", "#E8D6A8", "#AABBD4", "#CDB6D6", "#ABCDCD", "#F2F2F2"]
@@ -260,6 +261,15 @@ Singleton {
             ["inactive_tab_foreground", grey], ["inactive_tab_background", s1], ["tab_bar_background", bg]
         ].concat(pal.ansi.map((c, i) => ["color" + i, c])).map(([k, v]) => `${k} ${typeof v === "string" ? v : v.toString().slice(0, 7).toUpperCase()}`).join("\n") + "\n");
         Quickshell.execDetached(["pkill", "-USR1", "-x", "kitty"]);
+
+        // local change: the same theme for Ghostty (its config includes this file); SIGUSR2 makes it reload
+        const h = v => typeof v === "string" ? v : v.toString().slice(0, 7).toUpperCase();
+        ghostty.setText("# glyph: written by Theme.apply(), do not edit by hand\n" + [
+            ["font-family", "Space Mono"],
+            ["foreground", fg], ["background", s1], ["cursor-color", fg], ["cursor-text", s1],
+            ["selection-foreground", fg], ["selection-background", s3], ["split-divider-color", s3]
+        ].concat(pal.ansi.map((c, i) => ["palette", `${i}=${h(c)}`])).map(([k, v]) => `${k} = ${h(v)}`).join("\n") + "\n");
+        Quickshell.execDetached(["pkill", "-USR2", "-x", "ghostty"]);
     }
 
     // gtk и qt — только при смене цвета (shell.qml): apply() зовут и на каждый шаг кольца скругления. Шаблоны — свои term/

@@ -12,6 +12,9 @@ hl.config({
 })
 
 hl.gesture({ fingers = vars.workspaceSwipeFingers, direction = "vertical", action = "workspace" })
+-- local change: ←/→ slides between the apps of this workspace (scrolling layout, one full-width app per screen — user.lua)
+-- scale 2.5: the view moves 2.5× finger travel, so a short swipe already passes half a screen and lands on the next app
+hl.gesture({ fingers = vars.workspaceSwipeFingers, direction = "horizontal", action = "scroll_move", scale = 2.5 })
 hl.gesture({ fingers = vars.gestureFingers, direction = "up", action = "special", workspace_name = "special" })
 hl.gesture({
     fingers   = vars.gestureFingers,

@@ -7,7 +7,8 @@ local vars = require("variables")
 hl.window_rule({ match = { fullscreen = false }, opacity = vars.windowOpacity .. " override" })
 
 -- приложения (kitty) сами просят maximize при открытии — игнорируем, тайлинг решает сам
-hl.window_rule({ match = { class = ".*" }, suppress_event = "maximize" })
+-- local change: except apps with their own top bar (variables.ownBarApps), so their □ button works
+hl.window_rule({ match = { class = "negative:" .. vars.ownBarApps }, suppress_event = "maximize" })
 
 hl.window_rule({ match = { float = true, xwayland = false }, center = true }) -- Center all floating windows (not xwayland cause popups)
 
@@ -84,6 +85,9 @@ hl.window_rule({
     float             = true,
     keep_aspect_ratio = true,
 })
+
+-- scrcpy-iphone / scrcpy-pixel (~/.local/bin): the transparent frame window is the whole look, so no blur/shadow behind it
+hl.window_rule({ match = { class = "Scrcpy-(iphone|pixel)" }, no_blur = true, no_shadow = true })
 
 -- Ueberzugpp
 hl.window_rule({ match = { class = "^(ueberzugpp_.*)$" }, float = true, no_initial_focus = true })
